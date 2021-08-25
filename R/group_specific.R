@@ -9,6 +9,8 @@ source("https://raw.githubusercontent.com/vijaybioinfo/handy_functions/master/de
 source("https://raw.githubusercontent.com/vijaybioinfo/handy_functions/master/devel/filters.R") # ident_combine
 source("https://raw.githubusercontent.com/vijaybioinfo/handy_functions/master/R/stats_summary_table.R")
 # stats_summary_table moments
+source("https://raw.githubusercontent.com/vijaybioinfo/handy_functions/master/devel/pheatmapCorrection.R")
+# pheatmap
 
 #' @title Specific features
 #' @description Calculate the specific features for each group.
@@ -296,9 +298,16 @@ group_specific_summary <- function(
 #' @examples
 #' \dontrun{
 #' if(interactive()){
+#'   fnames <- list.files(
+#'     path = "/path/to/comparions", pattern = "results.csv", full.names = TRUE)
+#'   names(fnames) <- basename(dirname(fnames)) # needs to be named
+#'   results = lapply(X = fnames, read.csv, row.names = 1, check.names = FALSE)
 #'   gs_report <- group_specific_report(
-#'     list(G1vsG2 = comp1_df, G1vsG3 = comp2_df, , G2vsG3 = comp3_df),
-#'     return_report = TRUE
+#'     results_list = results,
+#'     path = "/path/to/comparions",
+#'     mdata = mdata,
+#'     edata = edata_norm,
+#'     hname = "condition"
 #'   )
 #' }
 #' @seealso
