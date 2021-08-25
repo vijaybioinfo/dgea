@@ -1,0 +1,3 @@
+group_up,group_down,test_column,name,context,filters
+Stim,Unstim,Stim,none,stim_tumor,"list(c('Stim', 'Stim', 'Unstim'), c('Tissue_Cell_type', 'Tumor-TRM'))"
+Stim,Unstim,Stim,none,activation_lung,"list(c('Stim', 'Stim', 'Unstim'), c('Tissue_Cell_type', 'Lung-TRM'))"

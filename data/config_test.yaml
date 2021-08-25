@@ -1,0 +1,33 @@
+---
+project: project_name
+method: [deseq2]
+metadata: /home/ciro/large/asthma_airways/raw/clarke_GSE111892/metadata_clarke_bulk.csv
+expression_data: /home/ciro/large/asthma_airways/raw/clarke_GSE111892/clarke_GSE111892_counts.rdata
+output_dir: /home/ciro/large/asthma_pjs/results/deseq2/clarke_bulk_test
+# group_up,group_down,test_column,name,context,filters
+comparisons:
+  file: /home/ciro/scripts/dgea/data/comparisons_test.csv
+  c2:
+    test_column: Cell_type
+    contrast: [TRM, nonTRM]
+    filters: {Stim: [Stim], Tissue: [Lung]}
+    context: stim_lung
+    job: {walltime: 06:00:00, mem: 16gb, ppn: 1, nodes: 1}
+covariates: none
+down_sample: FALSE
+padj_threshold: 0.05
+fc_threshold: 0.25
+# counts transformations: log2cpm, log2, cpm; file.csv~log2
+# Also used for visualisations
+ctrans: log2
+job:
+  template: https://raw.githubusercontent.com/vijaybioinfo/cellranger_wrappeR/main/routine_template.sh
+  main: {walltime: 04:00:00, mem: 15gb, ppn: 1, nodes: 1}
+  depend: none
+  submit: no # yes, no
+exec: /share/apps/R/3.5/bin/Rscript
+script: /home/ciro/scripts/dgea/R/dgea.R
+...
+
+# You can specify that two columns will be pasted with '~', then you need to
+# refer to the new groups separated by '_': column1~column2 and group1_group2
