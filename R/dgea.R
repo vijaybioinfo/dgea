@@ -5,109 +5,108 @@
 #########################################
 
 if(grepl("3.5", getRversion())) .libPaths('/home/ciro/R/newer_packs_library/3.5')
-library(optparse)
+
 optlist <- list(
-  make_option(
+  optparse::make_option(
     opt_str = c("-m", "--method"), type = "character", default = "mast",
     help = "Method: for analysis mast, edgeR, limma, scde, or deseq2."
   ),
-  make_option(
+  optparse::make_option(
     opt_str = c("-a", "--metadata"), type = "character",
     help = "Meta data table: CSV or Rdata (Seurat) object."
   ),
-  make_option(
+  optparse::make_option(
     opt_str = c("-e", "--expression_data"), type = "character",
     help = paste0("Count table: 10x folder PATH, CSV or Rdata (Seurat).\n\t\t",
                   "If not given, 'metadata' will be taken (Seurat object).\n\t\t",
                   "It may be processed according to later parameters ('ctrans').")
   ),
-  make_option(
+  optparse::make_option(
     opt_str = c("-u", "--group1"), type = "character",
     help = "Group 1 for comparison: down-regulated genes."
   ),
-  make_option(
+  optparse::make_option(
     opt_str = c("-d", "--group2"), type = "character",
     help = paste0("Group 2 for comparison.: You can add OTHERS|REST\n\t\t",
                   "to combine the rest of the samples except 'group1.'")
   ),
-  make_option(
+  optparse::make_option(
     opt_str = c("-n", "--newnames"), type = "character", default = "none",
     help = "Rename: comparison folder name; GROUP1vsGROUP2 (used for plots)."
   ),
-  make_option(
+  optparse::make_option(
     opt_str = c("-c", "--hname"), type = "character",
     help = "Column name of variable to test the hypothesis on."
   ),
-  make_option(
+  optparse::make_option(
     opt_str = c("-o", "--output_dir"), type = "character",
     help = "Output directory."
   ),
-  make_option(
+  optparse::make_option(
     opt_str = c("-f", "--filters"), type = "character", default = 'mycolumn~myclass',
     help = paste0("Filtering: A single character of mycolumn~myclass or\n\t\t",
           "(quoted) \"list(c('column1','class2'), c('column14','-class1')),\"\n\t\t",
           "or an expression \"column1 == 'group1'\"\n\t\t",
           "names preceeded by '-' indicate exclusion of the group.")
   ),
-  make_option(
+  optparse::make_option(
     opt_str = c("-b", "--context"), type = "character", default = 'none',
     help = paste0("Sub-name: used for a set of comparisons\n\t\t",
                   "e.g., clusters, disease, etc. Useful for summarization.")
   ),
-  make_option(
+  optparse::make_option(
     opt_str = c("-l", "--covariates"), type = "character", default = 'cngeneson',
     help = "Covariates: separated by '~', e. g., sex~age~treatment."
   ),
-  make_option(
+  optparse::make_option(
     opt_str = c("-s", "--down_sample"), type = "character", default = "FALSE",
     help = "Take the same number of samples/cells from 'group1' and 'group2.'"
   ),
-  make_option(
+  optparse::make_option(
     opt_str = c("-g", "--genesetf"), type = "character", default = 'no_file',
     help = paste0("Feature filtering: if on percentage expressing = 'filt_pct'.\n\t\t",
            "It can also be a file (row names will be taken).\n\t\t",
            "You can also append a further filter at the end of the file\n\t\t",
            "name like in 'FILTERS,' e. g., mycolumn~myclass; or cluster~10")
   ),
-  make_option(
+  optparse::make_option(
     opt_str = c("-t", "--ctrans"), type = "character", default = "log2",
     help = paste0("Data transformation: for visualisation.\n\t\t",
                   "You can specify separately 'log2' or 'cpm'\n\t\t",
                   "It can be a file, and if further transformations\n\t\t",
                   "you may specify after 'filename~log2'.")
   ),
-  make_option(
+  optparse::make_option(
     opt_str = c("-p", "--padj_threshold"), type = "numeric", default = 0.05,
     help = "Adjusted P-value threshold."
   ),
-  make_option(
+  optparse::make_option(
     opt_str = c("-r", "--fc_threshold"), type = "numeric", default = 0.25,
     help = "Fold change: ratio '0.25' usually for single-cell and '1' for bulk."
   ),
-  make_option(
+  optparse::make_option(
     opt_str = c("--thresh_min"), type = "numeric", default = 0,
     help = paste0("Threshold of expression: for cutoffs. Used to filter\n\t\t",
                   "low expression genes (in more than 25 % of the samples).")
   ),
-  make_option(
+  optparse::make_option(
     opt_str = c("--annotation"), type = "character",
     default = "/mnt/BioAdHoc/Groups/vd-ay/RNASeq_Workflow/Reference/GRCh37_annotation.csv",
     help = "Feature annotation: file to feature annotation."
   ),
-  make_option(
+  optparse::make_option(
     opt_str = c("--add_df"), type = "character", default = 'none',
     help = paste0("Extra results columns: path to tables to add to results\n\t\t",
                   "Separate them with '~'; 'path1~path2.'\n\t\t",
                   "Row 1 must match the gene names.")
   ),
-  make_option(
+  optparse::make_option(
     opt_str = c("-v", "--verbose"), default = TRUE,
     help = "Verbose: Show progress."
   )
 )
 # Getting arguments from command line and setting their values to their respective variable names.
-optparse <- OptionParser(option_list = optlist)
-opt <- parse_args(optparse)
+opt <- optparse::parse_args(optparse::OptionParser(option_list = optlist))
 ## Extra parameters ## ---------------------------------------------------------
 # NOTE: if you give csv files, check row.names, default:
 rnloc = 1 # row names in tables (usially for CSV/TXT files)
@@ -144,14 +143,15 @@ if(opt$verbose){
 
 if(opt$verbose) cat(cyan('\n----------------------- Packages and functions\n'))
 packages_funcs = c(
-  "data.table",
   "/home/ciro/scripts/handy_functions/devel/file_reading.R", # readfile
   "/home/ciro/scripts/handy_functions/devel/filters.R",
   # filters_pattern, filters_complex, filters_subset_df, sample_even
   "/home/ciro/scripts/handy_functions/devel/utilities.R",
   # features_find_symbols, mat_names, count_transformation
   "/home/ciro/scripts/clustering/R/utilities.R", # get_source_data
-  "/home/ciro/scripts/handy_functions/R/stats_summary_table.R" # stats_summary_table
+  "/home/ciro/scripts/handy_functions/R/stats_summary_table.R", # stats_summary_table
+  "/home/ciro/scripts/dgea/R/methods.R", # fitting_groups, DEAnalysis
+  "data.table"
 )
 loaded <- lapply(X = packages_funcs, FUN = function(x){
   cat("*", x, "\n")
@@ -218,6 +218,7 @@ filtereddata <- meta_filtering(
   mdata = annot,
   filters = opt$filters,
   cname = opt$hname,
+  cts = cts,
   v = TRUE
 )
 annot <- filtereddata[[1]]; filters <- filters_summary(filtereddata[[2]])
@@ -280,7 +281,6 @@ cat('-', ncol(cts), 'samples\n-', nrow(cts), 'features\n'); gc()
 
 ################################ Group fitting #################################
 # In case we want to capture the variance of a certain group. This is mainly for deseq2.
-source('/home/ciro/scripts/dgea/R/methods.R')
 if(grepl("deseq", opt$method)){
   ddsname <- paste0(getwd(), "/../.deseq2_dds_", opt$hname, "_FILT", filters, "_", nrow(annot), "samples.Rdata")
   cat("\n"); void <- fitting_groups(
@@ -467,7 +467,7 @@ tvar <- rowSums(datavis > opt$thresh_min, na.rm = TRUE) > min_samp
 if(sum(tvar) > 1){
   if(opt$verbose){
     cat("****", sum(tvar), "features with expression >",
-    opt$thresh_min, "in >", min_samp, "samples/cells\n")
+    opt$thresh_min, "in >", min_samp, "samples\n")
   }
   res$minExp <- as.character(res[, gene]) %in% rownames(datavis)[tvar]
   tvar <- paste0("minExp", opt$thresh_min, "in", min_samp, "samples")

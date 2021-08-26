@@ -29,6 +29,7 @@ DEAnalysis <- function(
   tvar <- create_formula(latents = latentvar, annotati = annot, amethod = amethod)
   myformula <- tvar[1]; latentvar <- tvar[-1]
   cat('Formula:', myformula, '\n')
+  # print(grep("CD4$|CD8B", rownames(mat), value = TRUE))
 
   if(grepl('mast', amethod)){
     suppressPackageStartupMessages(library(MAST)); packageVersion('MAST')
@@ -40,11 +41,11 @@ DEAnalysis <- function(
       for (g in levels(cdt)) {
         medgs[[g]] <- median( colSums(mat[, grepl(paste0('^', g), colnames(mat)), drop = FALSE] > 0) )
       }
-      cat('Median amount of genes per group:\n'); print(medgs)
+      cat('Median amount of features per group:\n'); print(medgs)
     }
 
     #Calculating the ngeneOn
-    cat('Number of genes expressed per cell, a.k.a, CDR:\n')
+    cat('Number of features expressed per cell, a.k.a, CDR:\n')
     cdr <- colSums(mat > 0)
     cat('Median:', median(cdr), '\n')
     cat('Mean:', mean(cdr), '\n\n')
@@ -66,7 +67,6 @@ DEAnalysis <- function(
       ),
       fData = data.frame("primerid" = rownames(mat)))
     rm(mat)
-
 
     if(length(latentvar) > 0){
       tvar <- latentvar[latentvar %in% colnames(annot)]
@@ -91,50 +91,51 @@ DEAnalysis <- function(
     thres <- try( suppressMessages(
       # thresholdSCRNACountMatrix(assay(datafMAST), nbins = 10, min_per_bin = 5)
       thresholdSCRNACountMatrix(assay(datafMAST), nbins = 20, min_per_bin = 30)
-    ) ); save(thres, file = paste0('thresholdSCRNACountMatrix_', mysufix, '.RData'))
+    ) ); save(thres, file = paste0('01_thresholdSCRNACountMatrix_', mysufix, '.rdata'))
     if(class(thres)[1] != 'try-error'){
       assays(datafMAST, withDimnames = FALSE) <- list(thresh=thres$counts_threshold, tpm=assay(datafMAST))
-    }
-    if(!file.exists('threshold_genes.pdf')){
+    }; threshold_file <- "01_threshold_features.pdf"
+    if(!file.exists(threshold_file)){
       thresl <- length(thres$cutpoint)
       if(thresl %in% 1:2) ssize <- 1 else ssize <- round(sqrt(thresl)+.5)
       if(thresl==1){ tvar <- 1 }else{ tvar <- round(thresl/ssize) }
       if(tvar*ssize < thresl) tvar <- tvar + 1
       if(!sqrt(thresl)%%1) tvar <- ssize <- sqrt(thresl)
       if(class(thres)[1] != 'try-error'){
-        pdf('threshold_genes.pdf',width=5*tvar,height=3*ssize)
+        pdf(threshold_file, width = 5 * tvar, height = 3 * ssize)
         par(mfrow=c(ssize,tvar)); plot(thres); graphics.off()
       }
     }; testpct = 0.2
     expressed_genes <- freq(datafMAST) > testpct # not applied
-    # datafMAST <- datafMAST[expressed_genes, ] # commented on Dec12, 2018 at 16.24
+    # Filter out features < 10 % is suggested by a maintainer
+    # https://github.com/RGLab/MAST/issues/135
     cat('If pct > ', testpct, ': ', nrow(datafMAST), ' -> ', sum(expressed_genes),
-        ' genes to test\n', sep = "")
-    cat("Testing", nrow(datafMAST), "genes on", ncol(datafMAST), "cells\n")
+        ' features to test\n', sep = "")
+    cat("Testing", nrow(datafMAST), "features on", ncol(datafMAST), "samples\n")
 
     ncores <- parallel::detectCores()
     ncores <- ifelse(ncores > 3, 3, ncores)
     cat('Using', ncores, 'cores\n\n')
     options(mc.cores = ncores)
 
-    fcHurdlef <- paste0('fcHurdle_', mysufix, '.RData')
-    if(!file.exists(fcHurdlef)){
+    fcHurdle_file <- paste0('04_fcHurdle_', mysufix, '.rdata')
+    if(!file.exists(fcHurdle_file)){
       cat('Regression\n')
-      tvar <- paste0('regression_', mysufix, '.RData')
-      if(!file.exists(tvar)){
+      regression_file <- paste0('02_regression_', mysufix, '.rdata')
+      if(!file.exists(regression_file)){
         zlm_res <- zlm(as.formula(myformula), datafMAST)
-        save(zlm_res, file = tvar)
-      }else{ load(tvar) }
+        save(zlm_res, file = regression_file)
+      }else{ load(regression_file) }
 
       condtrast <- paste0('condition', levels(cdt)[2])
       cat('\nSummary - diLRT:', condtrast,'\n')
       # only test the condition coefficient.
-      tvar <- paste0('summ_', mysufix, '.RData')
-      if(!file.exists(tvar)){
+      summary_file <- paste0('03_summary_', mysufix, '.rdata')
+      if(!file.exists(summary_file)){
         summaryCond <- summary(zlm_res, doLRT = condtrast)
-        save(summaryCond, file = tvar)
-      }else{ load(tvar) }
-      cat('Top 4 genes by contrast using the logFC\n')
+        save(summaryCond, file = summary_file)
+      }else{ load(summary_file) }
+      cat('Top 4 features by contrast using the logFC\n')
       print(summaryCond, n=4)
       cat('by discrete Z-score\n')
       print(summaryCond, n=4, by='D')
@@ -146,21 +147,27 @@ DEAnalysis <- function(
       # https://github.com/RGLab/MAST/issues/100 for the base
       cat('Getting results\n')
       summaryDt <- summaryCond$datatable
+      tvar <- contrast == condtrast & component == 'H', .(primerid, `Pr(>Chisq)`)
+      tmp <- contrast == condtrast & component == 'logFC', .(primerid, coef, ci.hi, ci.lo)
       fcHurdle <- merge(
-        summaryDt[contrast == condtrast & component == 'H', .(primerid, `Pr(>Chisq)`)], # hurdle P values
-        summaryDt[contrast == condtrast & component == 'logFC', .(primerid, coef, ci.hi, ci.lo)], # logFC
+        z = summaryDt[tvar], # hurdle P values
+        y = summaryDt[tmp], # logFC
         by = 'primerid')
       cat('Saving...\n')
-      save(fcHurdle, file = fcHurdlef)
+      save(fcHurdle, file = fcHurdle_file)
     }else{
       cat('Results provided!\n')
-      load(fcHurdlef)
+      load(fcHurdle_file)
     }
     fcHurdle[, fdr:=p.adjust(`Pr(>Chisq)`, 'fdr')]
     fcHurdle[, bfr:=p.adjust(`Pr(>Chisq)`, 'bonferroni')]
 
-    results <- merge(fcHurdle[fdr <= 1 & abs(coef) > 0], as.data.table(mcols(datafMAST)), by='primerid')
-
+    # Can't estimate the LFC if one class has no expression for the feature
+    # https://support.bioconductor.org/p/99244
+    results <- merge(
+      x = fcHurdle[fdr <= 1 & abs(coef) > 0], # removes features used to create groups
+      y = as.data.table(mcols(datafMAST)),
+      by = 'primerid')
     names(results) <- c("gene", "pvalue", "log2FoldChange", "ub", "lb", "padj", "pcor")
     results <- results[, c("gene", "lb", "log2FoldChange", "ub", "pvalue", "padj", "pcor")]
   }
@@ -173,7 +180,7 @@ DEAnalysis <- function(
     dge <- DGEList(mat, group = cdt)
     keep <- rowSums(cpm(dge) > 1) >= 2 # filtering
     dge <- dge[keep, , keep.lib.sizes = FALSE]
-    tvar <- paste0('calcNormEdgeR_', mysufix, '.RData')
+    tvar <- paste0('calcNormEdgeR_', mysufix, '.rdata')
     if(!file.exists(tvar)){
       cat('calcNormFactors\n')
       dge <- calcNormFactors(dge)
@@ -187,7 +194,7 @@ DEAnalysis <- function(
     }else{
       design <- model.matrix(~ cdr + cdt)
     }
-    tvar <- paste0('estimateDisp_', mysufix, '.RData')
+    tvar <- paste0('estimateDisp_', mysufix, '.rdata')
     if(!file.exists(tvar)){
       cat('estimateDisp\n')
       dge <- estimateDisp(dge, design = design)
@@ -195,7 +202,7 @@ DEAnalysis <- function(
     }else{
       load(tvar)
     }
-    tvar <- paste0('glmQLFit_', mysufix, '.RData')
+    tvar <- paste0('glmQLFit_', mysufix, '.rdata')
     if(!file.exists(tvar)){
       cat('glmQLFit\n')
       fit <- glmQLFit(dge, design = design)
@@ -203,7 +210,7 @@ DEAnalysis <- function(
     }else{
       load(tvar)
     }
-    tvar <- paste0('glmQLFTest_', mysufix, '.RData')
+    tvar <- paste0('glmQLFTest_', mysufix, '.rdata')
     if(!file.exists(tvar)){
       cat('glmQLFTest\n')
       qlf <- glmQLFTest(fit)
@@ -214,7 +221,6 @@ DEAnalysis <- function(
     tt <- topTags(qlf, n = Inf)
     results <- tt@.Data[[1]]
 
-    head(results)
     names(results) <- c("log2FoldChange", "logCPM", "F", "pvalue", "padj")
     results$gene <- rownames(results)
     results <- data.table(results[, c("gene", "logCPM", "log2FoldChange", "pvalue", "padj")])
@@ -225,7 +231,7 @@ DEAnalysis <- function(
   if(grepl('limma', amethod)){
     suppressPackageStartupMessages(library(limma)); packageVersion('limma')
     dge <- DGEList(mat, group = cdt)
-    tvar <- paste0('calcNormLimma_', mysufix, '.RData')
+    tvar <- paste0('calcNormLimma_', mysufix, '.rdata')
     if(!file.exists(tvar)){
       cat('calcNormFactors\n')
       dge <- calcNormFactors(dge)
@@ -235,7 +241,7 @@ DEAnalysis <- function(
     }
     cdr <- scale(colMeans(mat > 0))
     design <- model.matrix(~ cdt)
-    tvar <- paste0('lmFit_', mysufix, '.RData')
+    tvar <- paste0('lmFit_', mysufix, '.rdata')
     if(!file.exists(tvar)){
       cat('lmFit\n')
       y <- new("EList")
@@ -245,7 +251,7 @@ DEAnalysis <- function(
     }else{
       load(tvar)
     }
-    tvar <- paste0('eBayes_', mysufix, '.RData')
+    tvar <- paste0('eBayes_', mysufix, '.rdata')
     if(!file.exists(tvar)){
       cat('eBayes\n')
       fit <- eBayes(fit, trend = TRUE, robust = TRUE)
@@ -268,8 +274,8 @@ DEAnalysis <- function(
   if(grepl('scde', amethod)){
     suppressPackageStartupMessages(library(scde)); packageVersion('scde')
     cd <- clean.counts(mat, min.lib.size = 100, min.reads = 1, min.detected = 3)
-    cat('Taking', nrow(cd), 'out of', nrow(mat), 'genes\n')
-    cat('And', ncol(cd), 'out of', ncol(mat), 'cells\n')
+    cat('Taking', nrow(cd), 'out of', nrow(mat), 'features\n')
+    cat('And', ncol(cd), 'out of', ncol(mat), 'samples\n')
     print(t(headmat(cd, n = 10)))
 
     #### Fitting error models ####
@@ -308,7 +314,7 @@ DEAnalysis <- function(
     cd <- apply(cd, 2, function(x){ storage.mode(x) <- 'integer'; x })
     # less than 1000 cells, probably should be knn.error.models directly
     timestamp()
-    ifm <- paste0('ifm_', mysufix, '.RData')
+    ifm <- paste0('ifm_', mysufix, '.rdata')
     if(!file.exists(ifm)){
       cat('Using SCDE standard function...\n')
       o.ifm <- try(scde.error.models(counts = cd, groups = cdt, n.cores = ncores, min.nonfailed = mnf,
@@ -366,7 +372,7 @@ DEAnalysis <- function(
     cdt <- cdt[row.names(o.ifm)]
     # run differential expression tests on all genes
     cat('Differential expression tests:\n')
-    ifm <- paste0('ediff_', mysufix, '.RData')
+    ifm <- paste0('ediff_', mysufix, '.rdata')
     if(!file.exists(ifm)){
       timestamp()
       ediff <- scde.expression.difference(o.ifm, cd, o.prior, groups = cdt, batch = batchy,
@@ -406,18 +412,18 @@ DEAnalysis <- function(
     # CONTRAST: the name of the variable, the name of the factor level for the
     # numerator of the log2 ratio, and the name of the factor level for the denominator.
     ctrast <- c("condition", rev(levels(cdt))); cat("Extracting:", show_commas(ctrast), "\n")
-    cat("c;"); tvar <- paste0('contrast_', mysufix, '.RData')
+    cat("c;"); tvar <- paste0('contrast_', mysufix, '.rdata')
     if(!file.exists(tvar)){
       timestamp(); res <- results(dds, contrast = ctrast, alpha = 0.05)
       save(res, file = tvar)
     }else{ load(tvar) }
-    cat("s;"); tvar <- paste0('lfcShrink_', mysufix, '.RData')
+    cat("s;"); tvar <- paste0('lfcShrink_', mysufix, '.rdata')
     if(!file.exists(tvar)){
       # ctrast[2:3] %in% levels(colData(dds)[[ctrast[1]]])
       timestamp(); resLFC <- lfcShrink(dds, contrast = ctrast, type = "normal")
       save(resLFC, file = tvar)
     }else{ load(tvar) }
-    # final_res <- paste0('final_res_', mysufix, '.RData')
+    # final_res <- paste0('final_res_', mysufix, '.rdata')
     pdf("../deseq2_ma_plot.pdf", 9, 9)
     DESeq2::plotMA(res, alpha = 0.05, main = gsub("vs", " vs ", mysufix))
     DESeq2::plotMA(resLFC, alpha = 0.05, main = paste0("Shrunken: ", gsub("vs", " vs ", mysufix)))
@@ -448,9 +454,9 @@ DEAnalysis <- function(
     BiocParallel::register(param)
 
     # Detecting the DE genes
-    resultf <- paste0('detype_', mysufix, '.RData')
+    resultf <- paste0('detype_', mysufix, '.rdata')
     if(!file.exists(tvar)){
-      tvar <- paste0('contrast_', mysufix, '.RData')
+      tvar <- paste0('contrast_', mysufix, '.rdata')
       if(!file.exists(tvar)){
         results_des <- DEsingle(counts = mat, group = cdt, parallel = TRUE, BPPARAM = param)
         save(results_des, file = tvar)
@@ -464,7 +470,7 @@ DEAnalysis <- function(
     colnames(results) <- gsub("pvalue.adj.FDR", "padj", colnames(results))
   }
 
-  save(results,  file = paste0('results_', mysufix, '_', amethod, '.RData'))
+  save(results,  file = paste0('results_', mysufix, '_', amethod, '.rdata'))
   setwd('..')
   cat('---------------------------------\n')
   return(results)

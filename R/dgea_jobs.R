@@ -38,35 +38,35 @@ running_jobs <- function(){
 }
 
 ## Reading files ## ------------------------------------------------------------
-config_file = yaml::read_yaml(opt$yaml)
+config = yaml::read_yaml(opt$yaml)
 
-dir.create(config_file$output_dir, showWarnings = FALSE)
-setwd(config_file$output_dir)
-dir.create(config_file$project, showWarnings = FALSE)
-setwd(config_file$project)
+dir.create(config$output_dir, showWarnings = FALSE)
+setwd(config$output_dir)
+dir.create(config$project, showWarnings = FALSE)
+setwd(config$project)
 dir.create("scripts", showWarnings = FALSE)
 if(opt$verbose){
   cat(crayon::cyan("-------------------------------------\n"))
   cat(crayon::red$bold("------------ DGE Analysis\n"))
   cat("Configuration:")
-  str(config_file[!names(config_file) %in% "job"])
+  str(config[!names(config) %in% "job"])
   cat("Working at:", getwd(), "\n")
   system("ls -loh")
   cat("\n")
 }
 
 if(opt$verbose) cat("Getting job template\n")
-template_pbs_con <- file(description = config_file$job$template, open = "r")
+template_pbs_con <- file(description = config$job$template, open = "r")
 template_pbs <- readLines(con = template_pbs_con)
 close(template_pbs_con)
 
 # Setting lements to iterate through
 if(opt$verbose) cat("Fetching comparisons\n")
-if(is.null(config_file$comparisons$file)) config_file$comparisons$file = "none"
-comparisons = config_file$comparisons[!names(config_file$comparisons) %in% "file"]
-if(file.exists(config_file$comparisons$file)){
+if(is.null(config$comparisons$file)) config$comparisons$file = "none"
+comparisons = config$comparisons[!names(config$comparisons) %in% "file"]
+if(file.exists(config$comparisons$file)){
   if(opt$verbose) cat("- from file\n")
-  comps_tab = read.csv(config_file$comparisons$file, stringsAsFactors = FALSE)
+  comps_tab = read.csv(config$comparisons$file, stringsAsFactors = FALSE)
   more_comparions <- lapply(
     X = 1:nrow(comps_tab),
     FUN = function(x){
@@ -96,7 +96,7 @@ for(i in tvar){
 
 if(opt$verbose) cat("Processing", length(comparisons), "comparisons\n")
 if(opt$verbose) cat("--------------------------------------\n")
-for(m in config_file$method){
+for(m in config$method){
   for(config_comp in comparisons){
     if(opt$verbose) cat(config_comp$contrast, "in", config_comp$test_column)
     my_comparison <- if(isTRUE(grepl("vs", config_comp$name))){
@@ -104,7 +104,7 @@ for(m in config_file$method){
     }else{ paste0(config_comp$contrast, collapse = "vs") }
     res_file0 <- paste0(config_comp$context, "/", my_comparison, "/", m, "_results.csv")
     res_file <- paste0(getwd(), "/", res_file0)
-    re_run <- isTRUE(any(grepl("^f$|force", c(config_file$job$submit, opt$submit))))
+    re_run <- isTRUE(any(grepl("^f$|force", c(config$job$submit, opt$submit))))
     if(file.exists(res_file) && !re_run){
       if(opt$verbose) cat(crayon::green$bold(" - done\n")); next
     }
@@ -128,11 +128,11 @@ for(m in config_file$method){
 
     # Parameters
     params <- paste0(
-      config_file$exec,
-      " ", config_file$script,
+      config$exec,
+      " ", config$script,
       " --method=", m,
-      " --metadata=", config_file$metadata,
-      " --expression_data=", config_file$expression_data,
+      " --metadata=", config$metadata,
+      " --expression_data=", config$expression_data,
       " --group1=", config_comp$contrast[1],
       " --group2=", config_comp$contrast[2],
       " --newnames=", my_comparison,
@@ -140,12 +140,12 @@ for(m in config_file$method){
       " --output_dir=", getwd(),
       " --filters=\"", my_filter, "\"",
       " --context=", ifelse(is.null(config_comp$context), "none", config_comp$context),
-      " --covariates=", config_file$covariates,
-      " --down_sample=", config_file$down_sample,
-      " --ctrans=", config_file$ctrans,
-      " --padj_threshold=", config_file$padj_threshold,
-      " --fc_threshold=", config_file$fc_threshold,
-      " --annotation=", config_file$annotation,
+      " --covariates=", config$covariates,
+      " --down_sample=", config$down_sample,
+      " --ctrans=", config$ctrans,
+      " --padj_threshold=", config$padj_threshold,
+      " --fc_threshold=", config$fc_threshold,
+      " --annotation=", config$annotation,
       " --thresh_min=", 0,
       " --verbose=", TRUE,
       " "
@@ -156,37 +156,44 @@ for(m in config_file$method){
 
     pbs <- gsub("cellranger", "dgea", template_pbs)
     pbs <- gsub("\\{username\\}", Sys.info()[["user"]], pbs)
-    pbs <- gsub("\\{sampleid\\}", my_comparison, pbs)
     pbs <- gsub("\\{routine_pbs\\}", routine_pbs_file, pbs)
+    pbs <- gsub("\\{sampleid\\}", my_comparison, pbs)
     pbs <- gsub("\\{outpath\\}", output_dir, pbs)
     pbs <- gsub("\\{routine_params\\}", params, pbs)
     if(file.exists(res_file)){
+      # Copying partial results to continue from them
       pbs <- gsub("# \\{after_copy\\}", paste("mkdir --parents", dirname(res_file0)), pbs)
       tvar <- paste0("cp -R ", dirname(res_file), "/. ./", dirname(res_file0), "/")
       pbs <- gsub("# \\{pre_routine\\}", tvar, pbs)
     }
-    tvar <- if(is.null(config_comp$job)) config_file$job$main else config_comp$job
-    for(i in names(config_file$job$main)){
-      job_parm <- if(i %in% names(tvar)) tvar[[i]] else config_file$job$main[[i]]
+    tvar <- if(is.null(config_comp$job)) config$job$main else config_comp$job
+    for(i in names(config$job$main)){
+      job_parm <- if(i %in% names(tvar)) tvar[[i]] else config$job$main[[i]]
       job_parm <- if(m %in% names(job_parm)) job_parm[[m]] else job_parm[[1]]
       pbs <- gsub(paste0("\\{", i, "\\}"), job_parm, pbs)
     }
     pbs <- gsub("\\.\\.\\/scripts", "scripts", pbs)
 
-    running <- try(running_jobs(), silent = TRUE)
-    if(class(running) == "try-error") running <- list(Name = "none", id = "X124")
+    # Checking if it's currently on the run
+    running <- running_jobs()
     do_we_submit <- any(c(opt$submit, re_run))
-    if(any(grepl(routine_pbs_file, running$Name)) && isFALSE(do_we_submit)){
+    job_name <- routine_pbs_file#paste0(routine_pbs_file, "_", my_comparison, "$")
+    if(any(grepl(job_name, running$Name)) && isFALSE(do_we_submit)){
       if(opt$verbose) cat(" - running\n"); next
     }
 
     pbs_file <- paste0(getwd(), "/scripts/", routine_pbs_file, ".sh")
+    if(opt$verbose) cat(" - creating job file");
     writeLines(text = pbs, con = pbs_file)
-    if(isTRUE(any(c(config_file$job$submit, do_we_submit)))){
-      depend <- if(isTRUE(config_file$job$depend %in% running$id)) paste0("-W depend=afterok:", config_file$job$depend)
+
+    # Ready? Check if you really really want to... and for dependencies
+    if(isTRUE(any(c(config$job$submit, do_we_submit)))){
+      depend <- if(isTRUE(config$job$depend %in% running$id))
+        paste0("-W depend=afterok:", config$job$depend)
       pbs_command <- paste("qsub", depend, pbs_file)
       if(opt$verbose) cat("\n", pbs_command, "\n"); system(pbs_command)
       void <- suppressWarnings(file.remove(gsub(".sh$", paste0("_", my_comparison, ".out.txt"), pbs_file)))
+      void <- suppressWarnings(file.remove(gsub("sh$", "out.txt", pbs_file)))
     }
     if(opt$verbose) cat("\n")
   }
