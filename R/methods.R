@@ -147,11 +147,9 @@ DEAnalysis <- function(
       # https://github.com/RGLab/MAST/issues/100 for the base
       cat('Getting results\n')
       summaryDt <- summaryCond$datatable
-      tvar <- contrast == condtrast & component == 'H', .(primerid, `Pr(>Chisq)`)
-      tmp <- contrast == condtrast & component == 'logFC', .(primerid, coef, ci.hi, ci.lo)
       fcHurdle <- merge(
-        z = summaryDt[tvar], # hurdle P values
-        y = summaryDt[tmp], # logFC
+        z = summaryDt[contrast == condtrast & component == 'H', .(primerid, `Pr(>Chisq)`)], # hurdle P values
+        y = summaryDt[contrast == condtrast & component == 'logFC', .(primerid, coef, ci.hi, ci.lo)], # logFC
         by = 'primerid')
       cat('Saving...\n')
       save(fcHurdle, file = fcHurdle_file)
