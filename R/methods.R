@@ -147,7 +147,7 @@ DEAnalysis <- function(
       # https://github.com/RGLab/MAST/issues/100 for the base
       cat('Getting results\n')
       summaryDt <- summaryCond$datatable
-      fcHurdle <- data.table::merge(
+      fcHurdle <- merge(
         x = summaryDt[contrast == condtrast & component == 'H', .(primerid, `Pr(>Chisq)`)], # hurdle P values
         y = summaryDt[contrast == condtrast & component == 'logFC', .(primerid, coef, ci.hi, ci.lo)], # logFC
         by = 'primerid')
