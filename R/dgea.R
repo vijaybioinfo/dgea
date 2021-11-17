@@ -8,7 +8,9 @@
 # date: 2021-02-21
 # ------------------------------------------------------------------------------
 
-if(grepl("3.5", getRversion())) .libPaths('/home/ciro/R/newer_packs_library/3.5')
+lib3.5path = "/home/ciro/R/newer_packs_library/3.5"
+if(grepl("3.5", getRversion()) && file.exists(lib3.5path))
+  .libPaths(new = lib3.5path)
 
 optlist <- list(
   optparse::make_option(
@@ -324,11 +326,13 @@ cat('-', ncol(cts), 'samples\n-', nrow(cts), 'features\n'); gc()
 ################################ Group fitting #################################
 # In case we want to capture the variance of a certain group. This is mainly for deseq2.
 if(grepl("deseq", opt$method)){
-  ddsname <- paste0(getwd(), "/../.deseq2_dds_", opt$hname, "_FILT", filters, "_", nrow(annot), "samples.Rdata")
+  ddsname <- paste0(getwd(), "/../.", opt$method, "_dds_", opt$hname,
+    "_FILT", filters, "_", nrow(annot), "samples.Rdata")
   cat("\n"); void <- fitting_groups(
     edata = cts,
     annotati = annot,
     latents = opt$covariates,
+    method = opt$method,
     ddsfname = ddsname,
     path = "tmp/"
   )
