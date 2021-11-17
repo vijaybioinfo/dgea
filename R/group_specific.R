@@ -4,12 +4,12 @@
 # DGEA group specific #
 #######################
 
-source("https://raw.githubusercontent.com/vijaybioinfo/handy_functions/master/devel/utilities.R")
+source("/home/ciro/scripts/handy_functions/devel/utilities.R")
 # show_commas, filters_thresholds
-source("https://raw.githubusercontent.com/vijaybioinfo/handy_functions/master/devel/filters.R") # ident_combine
-source("https://raw.githubusercontent.com/vijaybioinfo/handy_functions/master/R/stats_summary_table.R")
+source("/home/ciro/scripts/handy_functions/devel/filters.R") # ident_combine
+source("/home/ciro/scripts/handy_functions/R/stats_summary_table.R")
 # stats_summary_table moments
-source("https://raw.githubusercontent.com/vijaybioinfo/handy_functions/master/devel/pheatmapCorrection.R")
+source("/home/ciro/scripts/handy_functions/devel/pheatmapCorrection.R")
 # pheatmap
 
 #' @title Specific features
@@ -42,6 +42,7 @@ group_specific_features <- function(
   padjthr = 0.05,
   fcthr = 0.5,
   redundant = FALSE,
+  check = FALSE,
   verbose = TRUE
 ) {
   # 1. Per DGEA table, give the genes a group based on the thresholds
@@ -54,24 +55,26 @@ group_specific_features <- function(
   stat_df = NULL
   if(all(c("avg_logFC", "p_val_adj") %in% colnames(results[[1]]))){
     if(verbose) cat("Seurat results\n")
-    tvar <- c("gene", "gene_name", "cluster")
-    res_de_df <- results[[1]][, tvar[tvar %in% colnames(results[[1]])]]
-    if(is.null(res_de_df$gene_name))
-      res_de_df$gene <- gsub("'", "", as.character(res_de_df$gene_name))
-    res_de_df = summarise_table(res_de_df, "gene", sep = sep, verbose = verbose)
-    res_de_df$group = as.character(res_de_df$cluster); res_de_df$cluster <- NULL
+    if(!is.null(results[[1]]$gene_name)) # safer name
+      results[[1]]$gene <- gsub("'", "", as.character(results[[1]]$gene_name))
+    results[[1]]$group <- results[[1]]$cluster
+    groups = unique(as.character(results[[1]]$group))
+    res_de_df <- results[[1]][, c("gene", "group")]
+    res_de_df = summarise_table(res_de_df, "gene", sep = sep, verbose = verbose > 1)
+    res_de_df$group = as.character(res_de_df$group)
     tvar <- grepl("_mean|_percent", colnames(results[[1]]))
     if(any(tvar)){
       tmp <- !duplicated(as.character(results[[1]]$gene))
       stat_df <- results[[1]][tmp, tvar]
       rownames(stat_df) <- results[[1]]$gene[tmp]
       colnames(stat_df) <- gsub("Seurat.*|CPM.*", "", colnames(stat_df))
-    }; groups = unique(results[[1]]$cluster)
+    }
     tvar <- c("avg_logFC", "p_val_adj", "gene")
+    if(verbose) cat("Transforming to list\n")
     results = lapply(
       X = setNames(groups, paste0(groups, "vsREST")),
       FUN = function(x){
-        tmp = results[[1]][results[[1]]$cluster == x, tvar]
+        tmp = results[[1]][which(results[[1]]$group == x), tvar]
         rownames(tmp) <- tmp$gene
         colnames(tmp) <- c("log2FoldChange", "padj", "gene"); tmp
       }
@@ -83,6 +86,7 @@ group_specific_features <- function(
     groups = gtools::mixedsort(unique(unlist(strsplit(names(results), vs))))
   }
   if(verbose) cat("Groups:", show_commas(groups), "\n")
+  if(check) return(list(results, res_de_df)) # check _summary step
   res_tests_summary = group_specific_summary(
     results = results,
     features_group = setNames(res_de_df$group, rownames(res_de_df)),
@@ -236,9 +240,11 @@ group_specific_summary <- function(
   if(isTRUE(redundant)) return(res_tests)
   groups_all = setdiff(unique(features_group), "NDE")
   groups = grep("&", groups_all, value = TRUE, invert = TRUE)
+  if(verbose) cat("Summarising test statistics\n")
   tests_summary = data.frame(data.table::rbindlist(lapply(
-    X = groups_all,
+    X = groups_all, # for each group, and group of groups (eg. G1&G2)
     FUN = function(x){
+      if(verbose > 1) cat(x, "\n")
       groups_x = strsplit(x, "&")[[1]]
       genes_x = names(features_group)[features_group == x]
       z = data.table::rbindlist(lapply(
@@ -264,6 +270,7 @@ group_specific_summary <- function(
       return(mydf)
     }
   ), fill = TRUE), check.names = FALSE)
+  # tests_summary <- tests_summary[!grepl("^NA$|^NA\\.[0-9]", tests_summary$features), ]
   rownames(tests_summary) <- as.character(tests_summary$features)
   tvar <- unlist(lapply(
     X = paste0("\\(", groups, "\\)"),
@@ -276,7 +283,7 @@ group_specific_summary <- function(
     FUN = function(x) {
       y <- x[!is.na(x)]
       if(length(y) >= 2) metap::minimump(y)$p else y[1]
-  })
+  }); if(verbose) cat("... done\n")
   return(tests_summary)
 }
 
@@ -333,7 +340,8 @@ group_specific_report <- function(
   the_report = list()
   results_group_specific = group_specific_features(
     results = results_list, ...
-  )
+  ) # check _summary
+  if(isTRUE(list(...)$check)) return(results_group_specific)
   if(verbose > 1) str(results_group_specific)
   summ_df = results_group_specific$group_specific
   if(is.null(results_group_specific$stats)){
@@ -360,7 +368,7 @@ group_specific_report <- function(
       )
     }else if(ncol(stat_df) > 1){
       if(verbose) cat("------- Stat summary -------\nTaken from results\n")
-      if(verbose) warning("Some measurments may be missing from comparisons\n")
+      if(verbose) warning("Some measurements may be missing from comparisons\n")
       colnames(stat_df) <- gsub(".eurat.*|CPM.*", "", colnames(stat_df))
       results_group_specific$stats = stat_df[, -1, drop = FALSE]; rm(stat_df)
     }
@@ -382,11 +390,12 @@ group_specific_report <- function(
     if(verbose) cat("--- Heatmap\n")
     annor = summ_df[summ_df[, "group"] != "NDE", "group", drop = FALSE]
     annor[, "group"] <- droplevels(annor[, "group"])
-    tvar <- apply(
-      X = summ_df[rownames(annor), grepl("_percent", colnames(summ_df))],
-      MARGIN = 1, FUN = function(x){
-        abs(diff(range(x)))
-    })
+    columns <- grep("_percent", colnames(summ_df), value = TRUE)
+    if(length(columns) == 0){ str(summ_df); stop("No stats columns found") }
+    tvar <- apply( # keeping features with a % difference > 25
+      X = summ_df[rownames(annor), columns],
+      MARGIN = 1, FUN = function(x) abs(diff(range(x)))
+    )
     labels_row_i <- rownames(annor)
     labels_row_i[!rownames(annor) %in% names(tvar[tvar > 25])] <- ""
     the_report$heatmap = list()
@@ -395,11 +404,11 @@ group_specific_report <- function(
       if(verbose) cat("    *", moments_i, "\n")
       anno_cnames = grepl(paste0(moments_i, "$"), colnames(summ_df))
       mat2plot <- as.matrix(summ_df[rownames(annor), anno_cnames])
-      if(moments_i[[1]] == "_mean"){
-        mat2plot <- log2(mat2plot + 1)
+      if(moments_i[[1]] == "_mean") mat2plot <- log2(mat2plot + 1)
+      if(1){ # row-wise scale and get the range
         mat2plot <- t(scale(t(mat2plot)))
         topz <- max(c(min(abs(c(range(mat2plot), 2))), 1))
-      }else{ topz <- 75 }
+      }else{ topz <- 75 } # this was for percentages...
       mat2plot[mat2plot > topz] <- topz; mat2plot[mat2plot < (-topz)] <- -topz;
       colnames(mat2plot) <- sub(moments_i, "", colnames(mat2plot))
       tvar <- intersect(levels(annor[, "group"]), colnames(mat2plot))

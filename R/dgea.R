@@ -1,8 +1,12 @@
 #!/usr/bin/R
 
-#########################################
-# Differential gene expression analysis #
-#########################################
+# ------------------------------------------------------------------------------
+# title: Differential gene expression analysis.
+# purpose: This script sets the data for a DGE analysis.
+# author: Ciro Ramírez-Suástegui
+# email: ksuastegui@gmail.com
+# date: 2021-02-21
+# ------------------------------------------------------------------------------
 
 if(grepl("3.5", getRversion())) .libPaths('/home/ciro/R/newer_packs_library/3.5')
 
@@ -63,11 +67,13 @@ optlist <- list(
     help = "Take the same number of samples/cells from 'group1' and 'group2.'"
   ),
   optparse::make_option(
-    opt_str = c("-g", "--genesetf"), type = "character", default = 'no_file',
-    help = paste0("Feature filtering: if on percentage expressing = 'filt_pct'.\n\t\t",
-           "It can also be a file (row names will be taken).\n\t\t",
+    opt_str = c("-g", "--genesetf"), type = "character", default = 'none',
+    help = paste0("Feature filtering:\n\t\t",
+           "1. If based on percentage of expressing cells = 'filt_pct'.\n\t\t",
+           "2. It can also be a file (row names will be taken).\n\t\t",
            "You can also append a further filter at the end of the file\n\t\t",
-           "name like in 'FILTERS,' e. g., mycolumn~myclass; or cluster~10")
+           "name like in 'FILTERS,' e. g., mycolumn~myclass; or cluster~10.\n\t\t",
+           "3. Pattern: [pre|post]:PATTERN. '-PATTERN' to exclude.")
   ),
   optparse::make_option(
     opt_str = c("-t", "--ctrans"), type = "character", default = "log2",
@@ -101,6 +107,10 @@ optlist <- list(
                   "Row 1 must match the gene names.")
   ),
   optparse::make_option(
+    opt_str = c("--code"), type = "character",
+    help = "R code you want to run inside. Run just after loading data."
+  ),
+  optparse::make_option(
     opt_str = c("-v", "--verbose"), default = TRUE,
     help = "Verbose: Show progress."
   )
@@ -132,12 +142,12 @@ min.diff.pct = -Inf # minimum group's percentage difference
 
 # Preparing coloured text
 if(suppressMessages(require(crayon))){
-  cyan = crayon::cyan; red_bold = crayon::red$bold
+  cyan = crayon::cyan; redb = crayon::red$bold
 }else{ cyan = red = c }
 
 if(opt$verbose){
   cat(cyan(    "-----------------------------------------\n"))
-  cat(red_bold("- Differential gene expression analysis -\n"))
+  cat(redb("- Differential gene expression analysis -\n"))
   cat(cyan(    "-----------------------------------------\n"))
 }
 
@@ -167,9 +177,33 @@ checkclass <- function(grpn, verbose = FALSE){ # to check groups when merging
   }
   if(verbose) cat('all is well\n')
 }
+geneset_fun <- function(x, y, verbose = FALSE){
+  yy <- y
+  genesetf <- unlist(strsplit(gsub(".*:", x), sepchar))
+  # if you give a file make sure the gene names are in the first column
+  if(file.exists(genesetf[[1]][1])){
+    if(verbose) cat('File of subset of genes\n')
+    yy <- readfile(genesetf[[1]][1], stringsAsFactors = FALSE, row.names = 1)
+    print(head(yy[, head(colnames(yy)), drop = FALSE]))
+    yy <- if(genesetf[2] %in% colnames(yy)){
+      filters_subset_df(genesetf[-1], yy, v = T)
+    }else{
+      if(verbose) cat('Using all genes in file\n'); rownames(yy)
+    }; yy <- show_found(yy, y, 'Features', v = TRUE)
+  }else if(isTRUE(genesetf[[1]][1] != "none")){
+    if(verbose) cat('Based on pattern\n')
+    yy <- grep(pattern = gsub("^\\-", "", genesetf),
+      x = y, value = TRUE,
+      invert = grepl("^\\-", genesetf))
+  }
+  if(verbose)
+    if(length(yy) != length(y)) cat("FILTERED\n") else cat("No filtered\n")
+  return(yy)
+}
 
 if(opt$verbose) cat(cyan('\n-------------------- Digesting parameters\n'))
 opt$filters <- filters_pattern(opt$filters)
+if(length(opt$filters) == 0) opt$filters <- "none"
 str(opt)
 
 if(opt$verbose) cat(cyan('\n------------------- Directories structure\n'))
@@ -183,7 +217,7 @@ if(opt$context != "none"){
 compid <- ifelse(grepl(vs, opt$newnames),
   opt$newnames, paste0(opt$group1, vs, opt$group2))
 dir.create(compid, showWarnings = FALSE); setwd(compid)
-cat(red_bold("Working in:", getwd(), "\n"))
+cat(redb("Working in:", getwd(), "\n"))
 dir.create('tmp', showWarnings = FALSE)
 
 if(opt$verbose) cat(cyan('\n-------------------------------- Log file\n'))
@@ -212,6 +246,11 @@ annot <- remove.factors(expr_data$mdata)
 cts <- expr_data$edata; rm(expr_data)
 cat('Meta data:\n'); str(annot)
 cat('Expression data:\n'); str(cts)
+
+if(!is.null(opt$code)){
+  cat(redb("Running code\n"), opt$code, "\n")
+  eval(parse(text = opt$code))
+}
 
 if(opt$verbose) cat(cyan('\n------------------------------- Filtering\n'))
 filtereddata <- meta_filtering(
@@ -243,7 +282,7 @@ annot$condition <- annot[, opt$hname]
 
 restvar <- if(grepl('^others$|^rest$', casefold(opt$group2))){
   if(opt$verbose) cat(opt$group1, 'vs OTHERS/REST comparison\n')
-  tvar <- unique(annot[, opt$hname])
+  tvar <- names(table(annot[, opt$hname])) # will ignore NAs
   group1_vec = unlist(strsplit(opt$group1, sepchar))
   opt$group2 <- paste0(tvar[!tvar %in% group1_vec], collapse = sepchar)
   "OTHERS"
@@ -255,7 +294,7 @@ if(grepl(sepchar, opt$group1) || grepl(sepchar, opt$group2)){
   checkclass(opt$group1, verbose = opt$verbose)
   checkclass(opt$group2, verbose = opt$verbose)
   grp1replace <- sub(paste0(vs, ".*"), "", compid)
-  grp2replace <- sub(paste0(".*", vs), "", compid)
+  grp2replace <- sub(paste0(".*", vs), "", compid) # will find complete names ^NAME$
   groups_str <- function(x) paste0(paste0("^", strsplit(x, sepchar)[[1]], "$"), collapse = "|")
   annot$condition <- sub(groups_str(opt$group1), grp1replace, annot[, opt$hname])
   annot$condition <- sub(groups_str(opt$group2), grp2replace, annot[, opt$hname])
@@ -300,7 +339,6 @@ grp2vector <- filters_subset_df(c("condition", opt$group2), annot, v = TRUE)
 minc <- min(length(grp2vector), length(grp1vector))
 # to avoid skewed differential expression when groups are uneven
 if(!opt$down_sample[1] %in% c("FALSE", "no", "n", "F")){
-  samplecells <- unique(unlist(strsplit(samplecells, sepchar)))
   if(opt$verbose) cat("Sampling cells <------------\n")
   if(all(file.exists(c("tmp/g1.csv", "tmp/g2.csv")))){
     grp1vector <- as.character(read.csv("tmp/g1.csv", row.names = 1)[, 1])
@@ -403,6 +441,9 @@ if(1){
   }else if(opt$verbose) cat("NOTE: filters 1 and 2 were not applied.\n")
   if(opt$verbose) cat("Testing", length(features), "/", nrow(ecomp), "features\n")
 }
+if(isTRUE(grepl("^pre", opt$genesetf[[1]]))){
+  features <- geneset_fun(opt$genesetf[[1]], features, opt$verbose)
+}
 # Filter the genes from the matrices and stat report
 ecomp <- ecomp[rownames(ecomp) %in% features, ]
 datavis <- datavis[rownames(datavis) %in% features, ]
@@ -484,23 +525,10 @@ if(file.exists(opt$annotation)){
 }
 if(opt$verbose) str(res)
 
-genesetf <- unlist(strsplit(opt$genesetf, sepchar))
-# if you give a file make sure the gene names are in the first column
-if(file.exists(genesetf[[1]][1])){
-  if(opt$verbose) cat('File of subset of genes\n')
-  geneset <- read.csv(genesetf[[1]][1], stringsAsFactors = FALSE, row.names = 1)
-  print(head(geneset[, head(colnames(geneset)), drop = FALSE]))
-  geneset <- if(genesetf[2] %in% colnames(geneset)){
-    filters_subset_df(genesetf[-1], geneset, v = T)
-  }else{
-    if(opt$verbose) cat('Using all genes in file\n'); rownames(geneset)
-  }
-  geneset <- show_found(geneset, res$gene, 'Features', v = TRUE)
-  if(length(geneset)){
-    if(opt$verbose) cat("Features filtered\n")
-    res$filtered <- res$gene %in% geneset
-  }
-}; cat('\n')
+if(isTRUE(grepl("^post", opt$genesetf[[1]]))){
+  tmp <- res$gene %in% geneset_fun(opt$genesetf, res$gene, opt$verbose)
+  if(!all(tmp)) res$filtered <- tmp
+}
 
 # excessive info to add — just read this and have no idea what I meant
 fname <- paste0(global_prefix, '_results.csv')

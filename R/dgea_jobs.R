@@ -1,30 +1,57 @@
-#!/bin/R
-
-library(optparse)
+#!/usr/bin/R
 
 optlist <- list(
-  make_option(
+  optparse::make_option(
     opt_str = c("-y", "--yaml"), type = "character", default = "config_project.yaml",
     help = "Configuration file."
   ),
-  make_option(
+  optparse::make_option(
     opt_str = c("-s", "--submit"), type = "logical", default = FALSE,
     help = "Submit jobs."
   ),
-  make_option(
+  optparse::make_option(
+    opt_str = c("-p", "--params"), type = "character",
+    help = "Override dgea.R parameters. Please always quote character types."
+  ),
+  optparse::make_option(
     opt_str = c("-v", "--verbose"), type = "logical", default = TRUE,
     help = "Verbose."
   )
 )
-optparse <- OptionParser(option_list = optlist)
-opt <- parse_args(optparse)
-if(interactive()) opt$yaml = "/home/ciro/scripts/dgea/config.yaml"
-
-## Functions ## ----------------------------------------------------------------
-dirnamen <- function(x, n = 1){
-  for(i in 1:n) x <- dirname(x)
-  return(x)
+optparse <- optparse::OptionParser(option_list = optlist)
+opt <- optparse::parse_args(optparse)
+if(interactive()){ # Example/manually
+  opt$yaml = "https://raw.githubusercontent.com/vijaybioinfo/dgea/main/config.yaml"
 }
+config = yaml::read_yaml(opt$yaml)
+
+if(requireNamespace("crayon", quietly = TRUE)){
+  cyan = crayon::cyan; redb = crayon::red$bold; gren = crayon::green; yelo = crayon::yellow
+}else{ cyan = redb = gren = yelo = c }
+
+if(opt$verbose){
+  cat(cyan("########################################################\n"))
+  cat(redb("########### Differential Expression Analysis ###########\n"))
+  cat(cyan("########################################################\n"))
+}
+
+if(opt$verbose) cat(cyan('\n------- Directories structure -----------------\n'))
+output_dir <- paste0(sub("\\/$", "", config$output_dir), "/", config$project, "/")
+if(!grepl("scratch|beegfs", getwd())){
+  cat("WARNING: No scratch folder involved; careful about temp files.\n")
+  dir.create(output_dir, recursive = TRUE); setwd(output_dir)
+}
+if(opt$verbose) cat(redb("Working in:", getwd(), "\n"))
+dir.create("scripts", showWarnings = FALSE)
+if(opt$verbose){
+  cat("Configuration:")
+  str(config[!names(config) %in% "job"], max.level = 2)
+  cat("Working at:", getwd(), "\n")
+  system("ls -loh")
+  cat("\n")
+}
+
+if(opt$verbose) cat(cyan('\n------- Packages and functions ----------------\n'))
 running_jobs <- function(){
   system("qstat -fu ${USER} | grep -E 'Job_Name|Job Id|job_state' | sed 's/Id: /Id_/g; s/ = /: /g; s/.herman.*/:/g' > ~/.tmp")
   jobs_yaml = yaml::read_yaml("~/.tmp")
@@ -36,24 +63,28 @@ running_jobs <- function(){
   ); rownames(jobs_df) <- NULL
   jobs_df
 }
-
-## Reading files ## ------------------------------------------------------------
-config = yaml::read_yaml(opt$yaml)
-
-dir.create(config$output_dir, showWarnings = FALSE)
-setwd(config$output_dir)
-dir.create(config$project, showWarnings = FALSE)
-setwd(config$project)
-dir.create("scripts", showWarnings = FALSE)
-if(opt$verbose){
-  cat(crayon::cyan("-------------------------------------\n"))
-  cat(crayon::red$bold("------------ DGE Analysis\n"))
-  cat("Configuration:")
-  str(config[!names(config) %in% "job"])
-  cat("Working at:", getwd(), "\n")
-  system("ls -loh")
-  cat("\n")
+parameters2set_fun <- function(x, config_name, verbose = FALSE){
+  parameters2set <- NULL
+  if(isTRUE(grepl("\\-\\-", x))){
+    if(verbose) cat("Passed as extras\n")
+    tmp <- setdiff(unlist(strsplit(x, "\\-\\-")), "")
+    parameters2set <- setNames(gsub(".*=", "", tmp), gsub("=.*", "", tmp))
+  }
+  if(!is.null(names(parameters2set))){
+    for(i in 1:length(parameters2set)){
+      param = paste0("config_name", "$", names(parameters2set)[i])
+      command = paste0(param, " = ", parameters2set[[i]])
+      if(is.null(eval(parse(text = param)))){
+        if(verbose) cat(" ", command, "\n")
+        eval(parse(text = command))#, envir = .GlobalEnv)
+      }
+    }
+  }; return(config_name)
 }
+
+if(opt$verbose) cat(cyan('\n------- Digesting parameters ------------------\n'))
+# opt$params = "--genesetf='pre:-PR[LS]' --ctrans='log2' --thresh_min=0.2"
+config <- parameters2set_fun(opt$params, config, verbose = opt$verbose)
 
 if(opt$verbose) cat("Getting job template\n")
 template_pbs_con <- file(description = config$job$template, open = "r")
@@ -98,7 +129,8 @@ if(opt$verbose) cat("Processing", length(comparisons), "comparisons\n")
 if(opt$verbose) cat("--------------------------------------\n")
 for(m in config$method){
   for(config_comp in comparisons){
-    if(opt$verbose) cat(config_comp$contrast, "in", config_comp$test_column)
+    if(opt$verbose)
+      cat(config_comp$contrast, "\n", config_comp$test_column, config_comp$context)
     my_comparison <- if(isTRUE(grepl("vs", config_comp$name))){
       config_comp$name
     }else{ paste0(config_comp$contrast, collapse = "vs") }
@@ -106,7 +138,7 @@ for(m in config$method){
     res_file <- paste0(getwd(), "/", res_file0)
     re_run <- isTRUE(any(grepl("^f$|force", c(config$job$submit, opt$submit))))
     if(file.exists(res_file) && !re_run){
-      if(opt$verbose) cat(crayon::green$bold(" - done\n")); next
+      if(opt$verbose) cat(gren(" - done\n")); next
     }
     my_filter = if(!is.null(names(config_comp$filter))){
       unlist(lapply(
@@ -142,14 +174,19 @@ for(m in config$method){
       " --context=", ifelse(is.null(config_comp$context), "none", config_comp$context),
       " --covariates=", config$covariates,
       " --down_sample=", config$down_sample,
+      " --genesetf=", ifelse(is.null(config$genesetf), "none", config$genesetf),
       " --ctrans=", config$ctrans,
       " --padj_threshold=", config$padj_threshold,
       " --fc_threshold=", config$fc_threshold,
       " --annotation=", config$annotation,
       " --thresh_min=", 0,
+      " --add_df=", ifelse(is.null(config$add_df), "none", config$add_df),
       " --verbose=", TRUE,
       " "
     )
+    if(!is.null(config_comp$code)){
+      params <- paste0(params, '--code="', config_comp$code, '"')
+    }
 
     # Output directory
     output_dir <- getwd()
@@ -192,6 +229,7 @@ for(m in config$method){
         paste0("-W depend=afterok:", config$job$depend)
       pbs_command <- paste("qsub", depend, pbs_file)
       if(opt$verbose) cat("\n", pbs_command, "\n"); system(pbs_command)
+      # system2(pbs_command, stdout = opt$verbose, stderr = opt$verbose)
       void <- suppressWarnings(file.remove(gsub(".sh$", paste0("_", my_comparison, ".out.txt"), pbs_file)))
       void <- suppressWarnings(file.remove(gsub("sh$", "out.txt", pbs_file)))
     }
