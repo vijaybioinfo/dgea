@@ -253,6 +253,9 @@ if(!is.null(opt$code)){
 }
 
 if(opt$verbose) cat(cyan('\n------------------------------- Filtering\n'))
+# Columns derived from features might not be accurate from the
+# main (cts variable) table, so you might need to provide these columns in the
+# metadata. A solution would be having the option of using the ctrans matrix
 filtereddata <- meta_filtering(
   mdata = annot,
   filters = opt$filters,
@@ -382,7 +385,7 @@ colnames(ecomp) <- c(
   paste(opt$group2, grp2vector, sep = sepchar)
 ); str(ecomp)
 
-# Determine visualisation
+# Determine matrix for visualisation
 ctrans <- unlist(strsplit(opt$ctrans, sepchar))
 if(file.exists(ctrans[1])){
   opt$expression_data <- ctrans[1]
@@ -390,7 +393,9 @@ if(file.exists(ctrans[1])){
   datavis <- readfile(ctrans[1], row.names = rnloc, check.names = FALSE, verbose = TRUE)
   if(class(datavis) != "matrix") datavis <- as.matrix(datavis)
   ctrans <- if(length(ctrans[-1]) > 0) rev(ctrans) else "" # keep file name for norm type
-}; datavis <- datavis[, c(grp1vector, grp2vector)]
+}
+
+datavis <- datavis[, c(grp1vector, grp2vector)]
 
 # First we want to normalise data
 dtype <- "CTS"; # currently only CPM transformation

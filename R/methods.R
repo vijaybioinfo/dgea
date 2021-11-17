@@ -11,12 +11,12 @@ DEAnalysis <- function(
   mat,
   cdt = NULL, # named vector of factors
   mysufix = 'G1vsG2',
-  amethod = c('mastlog', 'edgeR', 'edgeR_classic', 'limma', 'scde', 'deseq2', 'DEsingle'),
+  amethod = c('mastlog', 'edgeR', 'limma', 'scde', 'deseq2', 'DEsingle'),
   latentvar = NULL,
   path = "a1_rdata",
   sepchar = '~'
 ){
-  setwd(path) #; amethod <- match.arg(amethod)
+  setwd(path)
   cat('---------------------------------\n')
   cat('Method:', amethod, '\n')
 
@@ -521,15 +521,16 @@ fitting_groups <- function(
   edata,
   annotati,
   latents,
+  method = "deseq2",
   ddsfname = "dds.Rdata",
   path = "a1_rdata/"
 ){
-  cat("DESeq group fitting for", nrow(annotati), "libraries\n")
+  cat("Group fitting for", nrow(annotati), "libraries\n")
   cat("File:", ddsfname, "\n")
   write.table(ddsfname, file = paste0(path, 'ddslocation'), row.names = FALSE, col.names = FALSE, quote = FALSE)
   myformula <- create_formula(latents = latents, annotati = annotati)[1]
   cat("Formula:", myformula, "\n")
-  if(file.exists(ddsfname)){ cat("Existing DESeq object.\n"); return(NULL) }
+  if(file.exists(ddsfname)){ cat("Existing object.\n"); return(NULL) }
 
   suppressWarnings(suppressPackageStartupMessages(library(DESeq2)))
   suppressPackageStartupMessages(library(BiocParallel))
@@ -546,7 +547,7 @@ fitting_groups <- function(
   if(!file.exists(ddsfname)){
     write.table("Espera...", file = flagfile)
     sttime <- proc.time(); timestamp()
-    # edata <- as.matrix(edata) + 1
+    if(grepl("sc|p1", method)) edata <- as.matrix(edata) + 1
     dds <- DESeqDataSetFromMatrix(countData = edata, colData = annotati, design = as.formula(myformula))
     # The order of the variables of the design do not matter so long as the user
     # specifies the comparison to build a results table for, using the name or
