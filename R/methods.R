@@ -482,29 +482,26 @@ create_formula <- function(
   amethod = NULL
 ){
   cat("Creating formula\n")
-  thisformula <- if(grepl("~", latents)){
-    latents <- as.character(unlist(strsplit(latents, '~')))
-    latents_tmp <- latents[latents %in% colnames(annotati)]
-    if(length(latents_tmp)){
-      cat('Adding latent variables:', show_commas(latents_tmp), '\n')
-      latents_tmp <- latents_tmp[sapply(latents_tmp, function(x) length(unique(annotati[, x])) > 1 )]
-      cat('Found:', show_commas(latents_tmp), '\n')
-    } # design formula
-    # 2021-02-03: at some point I removed the cngeneson from the formula!! Re-check your results
-    latents_tmp <- latents_tmp#unique(c(latents[grepl("^cngeneson$", latents)], latents_tmp))
-    if((!'cngeneson' %in% latents_tmp) && isTRUE(grepl("mast", amethod))){
-      latents_tmp <- c("cngeneson", latents_tmp) # add if using mast and it's not included in formula
-    }
-    latents <- paste(latents_tmp, collapse = " + ")
-    variables <- c(latents, "+", "condition")
-    variables <- if(isTRUE(grepl("mast", amethod))) rev(variables) else variables
-    if(length(latents) > 0 && latents != ""){
-      paste(c("~", variables), collapse = " ")
-    }else{ "~ condition" }
-  }else{
-    latents_tmp <- setdiff(unlist(strsplit(latents, '\\+| ')), c(""));
-    paste("~", latents)
-  }
+  latents <- if(grepl("~", latents)){ # several
+    as.character(unlist(strsplit(latents, '~')))
+  }else if(grepl("\\+", latents)){
+    setdiff(unlist(strsplit(latents, '\\+| ')), c(""))
+  }else{ latents }
+  latents_tmp <- latents[latents %in% colnames(annotati)]
+  if(length(latents_tmp)){
+    cat('Adding latent variables:', show_commas(latents_tmp), '\n')
+    latents_tmp <- latents_tmp[sapply(latents_tmp, function(x) length(unique(annotati[, x])) > 1 )]
+    cat('Found:', show_commas(latents_tmp), '\n')
+  } # 2021-02-03: at some point I removed the cngeneson from the formula!! Re-check your results
+  latents_tmp <- unique(c(latents[grepl("^cngeneson$", latents)], latents_tmp))
+  if((!'cngeneson' %in% latents_tmp) && isTRUE(grepl("mast", amethod))){
+    latents_tmp <- c("cngeneson", latents_tmp) # add if using mast and it's not included in formula
+  }; latents <- paste(latents_tmp, collapse = " + ")
+  variables <- c(latents, "+", "condition")
+  variables <- if(isTRUE(grepl("mast", amethod))) rev(variables) else variables
+  thisformula <- if(length(latents) > 0 && latents != ""){
+    paste(c("~", variables), collapse = " ")
+  }else{ "~ condition" }
   # myformula <- paste("~ condition +", latents) # used to use this order, but...
   # Devon Ryan said this one should be used: https://www.biostars.org/p/278684/
   # NOTE: In order to benefit from the default settings of the package,
