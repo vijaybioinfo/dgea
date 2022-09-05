@@ -49,6 +49,11 @@ optlist <- list(
     help = "Output directory."
   ),
   optparse::make_option(
+    opt_str = c("--sepchar"), type = "character", default = '~',
+    help = paste0("Character used to when multiple categories are needed.\n\t\t",
+          "In other options' examples '~' is used as the default.")
+  ),
+  optparse::make_option(
     opt_str = c("-f", "--filters"), type = "character", default = 'mycolumn~myclass',
     help = paste0("Filtering: A single character of mycolumn~myclass or\n\t\t",
           "(quoted) \"list(c('column1','class2'), c('column14','-class1')),\"\n\t\t",
@@ -110,7 +115,7 @@ optlist <- list(
   ),
   optparse::make_option(
     opt_str = c("--code"), type = "character",
-    help = "R code you want to run inside. Run just after loading data."
+    help = "R code you want to run inside. It runs just after loading data."
   ),
   optparse::make_option(
     opt_str = c("-v", "--verbose"), default = TRUE,
@@ -122,7 +127,6 @@ opt <- optparse::parse_args(optparse::OptionParser(option_list = optlist))
 ## Extra parameters ## ---------------------------------------------------------
 # NOTE: if you give csv files, check row.names, default:
 rnloc = 1 # row names in tables (usially for CSV/TXT files)
-sepchar = '~' # character used to when multi-parameters are needed (like a vector)
 pseuc = 1 # [pseudo]count to add when log-transforming values
 myseed = 27 # bringing determinism hehe
 vs = 'vs' # string to separate comparison names
@@ -173,13 +177,13 @@ loaded <- lapply(X = packages_funcs, FUN = function(x){
 })
 checkclass <- function(grpn, verbose = FALSE){ # to check groups when merging
   if(verbose) cat('For:', grpn,'\n--- ')
-  classes <- unlist(base::strsplit(grpn, split = sepchar))
+  classes <- unlist(base::strsplit(grpn, split = opt$sepchar))
   for(tvar in classes){
     if(!tvar %in% annot[, opt$hname]) stop('Category ', tvar, ' not found, merging is not possible.')
   }
   if(verbose) cat('all is well\n')
 }
-geneset_fun <- function(x, y, verbose = FALSE){
+geneset_fun <- function(x, y, verbose = FALSE, sepchar = "~"){
   yy <- y
   genesetf <- unlist(strsplit(gsub(".*:", x), sepchar))
   # if you give a file make sure the gene names are in the first column
@@ -216,8 +220,9 @@ if(!grepl("scratch|beegfs", getwd())){
 if(opt$context != "none"){
   dir.create(opt$context, showWarnings = FALSE); setwd(opt$context)
 }
-compid <- ifelse(grepl(vs, opt$newnames),
-  opt$newnames, paste0(opt$group1, vs, opt$group2))
+compid <- if(grepl(vs, opt$newnames)){
+  opt$newnames
+}else{ paste0(opt$group1, vs, opt$group2) }
 dir.create(compid, showWarnings = FALSE); setwd(compid)
 cat(redb("Working in:", getwd(), "\n"))
 dir.create('tmp', showWarnings = FALSE)
@@ -262,6 +267,7 @@ filtereddata <- meta_filtering(
   mdata = annot,
   filters = opt$filters,
   cname = opt$hname,
+  sepchar = opt$sepchar,
   cts = cts,
   v = TRUE
 )
@@ -288,19 +294,19 @@ annot$condition <- annot[, opt$hname]
 restvar <- if(grepl('^others$|^rest$', casefold(opt$group2))){
   if(opt$verbose) cat(opt$group1, 'vs OTHERS/REST comparison\n')
   tvar <- names(table(annot[, opt$hname])) # will ignore NAs
-  group1_vec = unlist(strsplit(opt$group1, sepchar))
-  opt$group2 <- paste0(tvar[!tvar %in% group1_vec], collapse = sepchar)
+  group1_vec = unlist(strsplit(opt$group1, opt$sepchar))
+  opt$group2 <- paste0(tvar[!tvar %in% group1_vec], collapse = opt$sepchar)
   "OTHERS"
 }
 
 # For merged comparisons
-if(grepl(sepchar, opt$group1) || grepl(sepchar, opt$group2)){
-  if(opt$verbose) cat("Merging within", opt$hname, "specified\n")
+if(grepl(opt$sepchar, opt$group1) || grepl(opt$sepchar, opt$group2)){
+  if(opt$verbose) cat("\nMerging within", opt$hname, "specified\n")
   checkclass(opt$group1, verbose = opt$verbose)
   checkclass(opt$group2, verbose = opt$verbose)
   grp1replace <- sub(paste0(vs, ".*"), "", compid)
   grp2replace <- sub(paste0(".*", vs), "", compid) # will find complete names ^NAME$
-  groups_str <- function(x) paste0(paste0("^", strsplit(x, sepchar)[[1]], "$"), collapse = "|")
+  groups_str <- function(x) paste0(paste0("^", strsplit(x, opt$sepchar)[[1]], "$"), collapse = "|")
   annot$condition <- sub(groups_str(opt$group1), grp1replace, annot[, opt$hname])
   annot$condition <- sub(groups_str(opt$group2), grp2replace, annot[, opt$hname])
   opt$group1 <- grp1replace; opt$group2 <- grp2replace # update the tested group names
@@ -385,12 +391,12 @@ ecomp[, grp1vector[1]] <- ecomp[, grp1vector[1]] + 1
 ecomp[, grp2vector[1]] <- ecomp[, grp2vector[1]] + 1
 # add the group as a prefix to the sample/cell names
 colnames(ecomp) <- c(
-  paste(opt$group1, grp1vector, sep = sepchar),
-  paste(opt$group2, grp2vector, sep = sepchar)
+  paste(opt$group1, grp1vector, sep = opt$sepchar),
+  paste(opt$group2, grp2vector, sep = opt$sepchar)
 ); str(ecomp)
 
 # Determine matrix for visualisation
-ctrans <- unlist(strsplit(opt$ctrans, sepchar))
+ctrans <- unlist(strsplit(opt$ctrans, opt$sepchar))
 if(file.exists(ctrans[1])){
   opt$expression_data <- ctrans[1]
   if(opt$verbose) cat("Getting matrix for visualisations\n")
@@ -451,7 +457,7 @@ if(1){
   if(opt$verbose) cat("Testing", length(features), "/", nrow(ecomp), "features\n")
 }
 if(isTRUE(grepl("^pre", opt$genesetf[[1]]))){
-  features <- geneset_fun(opt$genesetf[[1]], features, opt$verbose)
+  features <- geneset_fun(opt$genesetf[[1]], features, opt$verbose, sepchar = opt$sepchar)
 }
 # Filter the genes from the matrices and stat report
 ecomp <- ecomp[rownames(ecomp) %in% features, ]
