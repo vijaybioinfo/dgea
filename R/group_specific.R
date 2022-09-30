@@ -345,6 +345,7 @@ group_specific_report <- function(
   if(verbose > 1) str(results_group_specific)
   summ_df = results_group_specific$group_specific
   if(is.null(results_group_specific$stats)){
+    if (verbose) cat("Summary statistics fetching or calculation\n")
     stat_df = data.frame(
       row.names = unique(unlist(lapply(results_list, rownames))))
     stat_df$gene_name = rownames(stat_df)
@@ -358,7 +359,7 @@ group_specific_report <- function(
           stat_df = joindf(stat_df, results_list[[j]][, y, drop = FALSE])
       }
     }
-    if(!is.null(mdata) & !is.null(edata)){
+    if(!is.null(mdata) && !is.null(edata)){
       results_group_specific$stats = stats_summary_table(
         mat = edata,
         groups = setNames(mdata[, hname], rownames(mdata)),
