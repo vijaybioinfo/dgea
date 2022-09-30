@@ -77,10 +77,12 @@ optlist <- list(
     opt_str = c("-g", "--genesetf"), type = "character", default = 'none',
     help = paste0("Feature filtering:\n\t\t",
            "1. If based on percentage of expressing cells = 'filt_pct'.\n\t\t",
-           "2. It can also be a file (row names will be taken).\n\t\t",
+           "2. Based on a regex patter, e. g., '^rps|^rpl|^mp-'.\n\t\t",
+           "   Add '~' at the beginning to indicate removal ('~^rps|^rpl').\n\t\t",
+           "3. It can also be a file (row names will be taken).\n\t\t",
            "You can also append a further filter at the end of the file\n\t\t",
            "name like in 'FILTERS,' e. g., mycolumn~myclass; or cluster~10.\n\t\t",
-           "3. Pattern: [pre|post]:PATTERN. '-PATTERN' to exclude.")
+           "Note. Indicate filter before DGEA with: 'pre:PATTERN'.")
   ),
   optparse::make_option(
     opt_str = c("-t", "--ctrans"), type = "character", default = "log2",
@@ -198,9 +200,9 @@ geneset_fun <- function(x, y, verbose = FALSE, sepchar = "~"){
     }; yy <- show_found(yy, y, 'Features', v = TRUE)
   }else if(isTRUE(genesetf[[1]][1] != "none")){
     if(verbose) cat('Based on pattern\n')
-    yy <- grep(pattern = gsub("^\\-", "", genesetf),
+    yy <- grep(pattern = gsub("^~", "", x),
       x = y, value = TRUE,
-      invert = grepl("^\\-", genesetf))
+      invert = grepl("^~", x))
   }
   if(verbose)
     if(length(yy) != length(y)) cat("FILTERED\n") else cat("No filtered\n")
@@ -456,8 +458,10 @@ if(1){
   }else if(opt$verbose) cat("NOTE: filters 1 and 2 were not applied.\n")
   if(opt$verbose) cat("Testing", length(features), "/", nrow(ecomp), "features\n")
 }
-if(isTRUE(grepl("^pre", opt$genesetf[[1]]))){
-  features <- geneset_fun(opt$genesetf[[1]], features, opt$verbose, sepchar = opt$sepchar)
+if(isTRUE(grepl("^pre", opt$genesetf))){
+  features <- geneset_fun(
+    sub("^pre:", "", opt$genesetf), features, opt$verbose, sepchar = opt$sepchar
+  )
 }
 # Filter the genes from the matrices and stat report
 ecomp <- ecomp[rownames(ecomp) %in% features, ]
@@ -540,15 +544,15 @@ if(file.exists(opt$annotation)){
 }
 if(opt$verbose) str(res)
 
-if(isTRUE(grepl("^post", opt$genesetf[[1]]))){
-  tmp <- res$gene %in% geneset_fun(opt$genesetf, res$gene, opt$verbose)
-  if(!all(tmp)) res$filtered <- tmp
-}
+tmp <- res$gene %in% geneset_fun(opt$genesetf, res$gene, opt$verbose)
+if(!all(tmp)) res$filtered <- tmp
 
 # excessive info to add — just read this and have no idea what I meant
 fname <- paste0(global_prefix, '_results.csv')
 if(opt$verbose) cat('Writing results:', fname, '\n')
 write.csv(res, file = fname, quote = FALSE, row.names = FALSE)
+
+if(!is.null(res$filtered)) res <- res[res$filtered,]
 
 if(opt$verbose) cat(cyan('\n------ [Symbolically] linking input files\n'))
 tvar <- tools::file_ext(opt$expression_data)
