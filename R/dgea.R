@@ -3,14 +3,17 @@
 # ------------------------------------------------------------------------------
 # title: Differential gene expression analysis.
 # purpose: This script sets the data for a DGE analysis.
-# author: Ciro Ramírez-Suástegui
-# email: ksuastegui@gmail.com
-# date: 2021-02-21
+#
+# author:
+#   - name: Ciro Ramírez-Suástegui
+#     affiliation: La Jolla Institute for Immunology
+#     email: ciro@lji.org, cramsuig@gmail.com
+# Creation: 2021-02-21
+# Last revised: 2022-10-12
+#
+# Copyright (C) 2022 Ciro Ramírez-Suástegui (cramsuig@gmail.com)
+# Permission to copy and modify is granted under the GPL-3.0-or-later license
 # ------------------------------------------------------------------------------
-
-lib3.5path = "/home/ciro/R/newer_packs_library/3.5"
-if(grepl("3.5", getRversion()) && file.exists(lib3.5path))
-  .libPaths(new = lib3.5path)
 
 optlist <- list(
   optparse::make_option(
@@ -187,7 +190,7 @@ checkclass <- function(grpn, verbose = FALSE){ # to check groups when merging
 }
 geneset_fun <- function(x, y, verbose = FALSE, sepchar = "~"){
   yy <- y
-  genesetf <- unlist(strsplit(gsub(".*:", x), sepchar))
+  genesetf <- unlist(strsplit(gsub(".*:", "", x), sepchar))
   # if you give a file make sure the gene names are in the first column
   if(file.exists(genesetf[[1]][1])){
     if(verbose) cat('File of subset of genes\n')
